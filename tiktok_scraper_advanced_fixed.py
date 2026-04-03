@@ -93,7 +93,7 @@ class AdvancedTikTokScraper:
             use_persistent_context=False,
         )
         
-    async def scrape(self, url: str, wait_time: int = 5):
+    async def scrape(self, url: str, wait_time: int = 10):
         """爬取抖音内容，支持多种策略"""
         
         async with AsyncWebCrawler(config=self.browser_config) as crawler:
@@ -104,17 +104,91 @@ class AdvancedTikTokScraper:
                 js_code=[
                     f"""
                     (async () => {{
-                        await new Promise(resolve => setTimeout(resolve, {wait_time * 1000}));
+                        console.log('开始等待页面加载...');
+                        
+                        // 等待页面加载完成
+                        await new Promise(resolve => {
+                            if (document.readyState === 'complete') {
+                                resolve();
+                            } else {
+                                window.addEventListener('load', resolve);
+                                setTimeout(resolve, 15000); // 15秒超时
+                            }
+                        });
+                        
+                        console.log('页面加载完成，开始等待关键元素...');
+                        
+                        // 等待视频或图片元素出现
+                        await new Promise(resolve => {
+                            let attempts = 0;
+                            const maxAttempts = 20;
+                            
+                            const checkElements = () => {
+                                attempts++;
+                                const hasVideos = document.querySelector('video') !== null;
+                                const hasImages = document.querySelector('img') !== null;
+                                const hasContent = document.querySelector('.video-container, .post-content, .content') !== null;
+                                
+                                if (hasVideos || hasImages || hasContent || attempts >= maxAttempts) {
+                                    console.log(`等待完成: 视频=${hasVideos}, 图片=${hasImages}, 内容=${hasContent}, 尝试=${attempts}`);
+                                    resolve();
+                                } else {
+                                    setTimeout(checkElements, 500);
+                                }
+                            };
+                            
+                            checkElements();
+                        });
+                        
+                        console.log('关键元素出现，开始等待网络稳定...');
+                        
+                        // 等待网络请求稳定
+                        let lastNetworkActivity = Date.now();
+                        await new Promise(resolve => {
+                            const checkNetwork = () => {
+                                const now = Date.now();
+                                if (now - lastNetworkActivity > 2000) {
+                                    console.log('网络请求稳定');
+                                    resolve();
+                                } else {
+                                    setTimeout(checkNetwork, 500);
+                                }
+                            };
+                            
+                            // 监听网络请求
+                            const originalFetch = window.fetch;
+                            window.fetch = async (...args) => {
+                                lastNetworkActivity = Date.now();
+                                return originalFetch.apply(this, args);
+                            };
+                            
+                            const originalXHR = XMLHttpRequest;
+                            XMLHttpRequest.prototype.send = function(...args) {
+                                lastNetworkActivity = Date.now();
+                                return originalXHR.prototype.send.apply(this, args);
+                            };
+                            
+                            setTimeout(checkNetwork, 1000);
+                        });
+                        
+                        console.log('网络稳定，开始提取数据...');
+                        
+                        // 模拟用户行为：滚动页面
+                        for (let i = 0; i < 3; i++) {
+                            window.scrollBy(0, 500);
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
+                        window.scrollTo(0, 0);
                         
                         const results = {{
                             pageTitle: document.title,
                             pageUrl: window.location.href,
                             videos: [],
                             images: [],
-                            networkRequests: [],
                             pageData: {{}}
                         }};
                         
+                        // 提取视频
                         const videos = Array.from(document.querySelectorAll('video'));
                         results.videos = videos.map(video => {{
                             return {{
@@ -128,6 +202,7 @@ class AdvancedTikTokScraper:
                             }};
                         }});
                         
+                        // 提取图片
                         const images = Array.from(document.querySelectorAll('img'));
                         results.images = images.map(img => {{
                             return {{
@@ -139,6 +214,7 @@ class AdvancedTikTokScraper:
                             }};
                         }});
                         
+                        console.log(`提取完成: 视频=${results.videos.length}, 图片=${results.images.length}`);
                         return results;
                     }})();
                     """
@@ -164,7 +240,7 @@ class AdvancedTikTokScraper:
                     "error": result.error_message
                 }
     
-    async def scrape_with_network_capture(self, url: str, wait_time: int = 8):
+    async def scrape_with_network_capture(self, url: str, wait_time: int = 12):
         """使用网络请求捕获来寻找媒体资源"""
         
         async with AsyncWebCrawler(config=self.browser_config) as crawler:
@@ -175,18 +251,88 @@ class AdvancedTikTokScraper:
                 js_code=[
                     f"""
                     (async () => {{
-                        await new Promise(resolve => setTimeout(resolve, {wait_time * 1000}));
+                        console.log('开始等待页面加载...');
                         
-                        const scrollInterval = setInterval(() => {{
-                            window.scrollBy(0, 500);
-                        }}, 500);
+                        // 等待页面加载完成
+                        await new Promise(resolve => {
+                            if (document.readyState === 'complete') {
+                                resolve();
+                            } else {
+                                window.addEventListener('load', resolve);
+                                setTimeout(resolve, 20000); // 20秒超时
+                            }
+                        });
                         
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        console.log('页面加载完成，开始等待关键元素...');
+                        
+                        // 等待视频或图片元素出现
+                        await new Promise(resolve => {
+                            let attempts = 0;
+                            const maxAttempts = 30;
+                            
+                            const checkElements = () => {
+                                attempts++;
+                                const hasVideos = document.querySelector('video') !== null;
+                                const hasImages = document.querySelector('img') !== null;
+                                const hasContent = document.querySelector('.video-container, .post-content, .content, .video-player') !== null;
+                                
+                                if (hasVideos || hasImages || hasContent || attempts >= maxAttempts) {
+                                    console.log(`等待完成: 视频=${hasVideos}, 图片=${hasImages}, 内容=${hasContent}, 尝试=${attempts}`);
+                                    resolve();
+                                } else {
+                                    setTimeout(checkElements, 500);
+                                }
+                            };
+                            
+                            checkElements();
+                        });
+                        
+                        console.log('关键元素出现，开始等待网络稳定...');
+                        
+                        // 等待网络请求稳定
+                        let lastNetworkActivity = Date.now();
+                        await new Promise(resolve => {
+                            const checkNetwork = () => {
+                                const now = Date.now();
+                                if (now - lastNetworkActivity > 3000) {
+                                    console.log('网络请求稳定');
+                                    resolve();
+                                } else {
+                                    setTimeout(checkNetwork, 500);
+                                }
+                            };
+                            
+                            // 监听网络请求
+                            const originalFetch = window.fetch;
+                            window.fetch = async (...args) => {
+                                lastNetworkActivity = Date.now();
+                                return originalFetch.apply(this, args);
+                            };
+                            
+                            const originalXHR = XMLHttpRequest;
+                            XMLHttpRequest.prototype.send = function(...args) {
+                                lastNetworkActivity = Date.now();
+                                return originalXHR.prototype.send.apply(this, args);
+                            };
+                            
+                            setTimeout(checkNetwork, 1000);
+                        });
+                        
+                        console.log('网络稳定，开始滚动页面...');
+                        
+                        // 模拟用户滚动
+                        const scrollInterval = setInterval(() => {
+                            window.scrollBy(0, 600);
+                        }, 600);
+                        
+                        await new Promise(resolve => setTimeout(resolve, 5000));
                         clearInterval(scrollInterval);
                         window.scrollTo(0, 0);
                         
+                        console.log('滚动完成，提取数据...');
+                        
                         return {{
-                            videos: Array.from(document.querySelectorAll('video')).map(v => v.src),
+                            videos: Array.from(document.querySelectorAll('video')).map(v => v.src || v.currentSrc),
                             images: Array.from(document.querySelectorAll('img')).map(i => i.src),
                             pageTitle: document.title
                         }};
@@ -288,9 +434,11 @@ async def main():
     
     if mode == "2":
         print("\n🚀 使用高级模式 (网络请求捕获)...")
+        print("⏳ 正在等待页面完全加载，请耐心等待...")
         result = await scraper.scrape_with_network_capture(url)
     else:
         print("\n🚀 使用基础模式...")
+        print("⏳ 正在等待页面完全加载，请耐心等待...")
         result = await scraper.scrape(url)
     
     if result["success"]:

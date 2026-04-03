@@ -103,32 +103,143 @@ class AdvancedTikTokScraper:
                 
                 // 等待页面加载完成
                 await new Promise(resolve => {
-                    if (document.readyState === 'complete') {
-                        resolve();
-                    } else {
-                        window.addEventListener('load', resolve);
-                        setTimeout(resolve, 15000); // 15秒超时
-                    }
+                    let loadAttempts = 0;
+                    const maxLoadAttempts = 60; // 30秒
+                    
+                    const checkLoadStatus = () => {
+                        loadAttempts++;
+                        if (document.readyState === 'complete') {
+                            console.log('页面完全加载完成');
+                            resolve();
+                        } else if (loadAttempts >= maxLoadAttempts) {
+                            console.log('页面加载超时，继续执行');
+                            resolve();
+                        } else {
+                            setTimeout(checkLoadStatus, 500);
+                        }
+                    };
+                    
+                    checkLoadStatus();
                 });
                 
-                console.log('页面加载完成，开始等待关键元素...');
+                console.log('页面加载完成，开始处理登录窗口...');
                 
-                // 等待视频或图片元素出现
+                // 关闭登录窗口
+                const closeLoginModal = () => {
+                    // 常见的关闭按钮选择器
+                    const closeButtons = [
+                        '.login-modal .close',
+                        '.modal-close',
+                        '.close-btn',
+                        '.x-button',
+                        '[aria-label="关闭"]',
+                        '[aria-label="Close"]',
+                        '.popup-close',
+                        '.dialog-close',
+                        '.login-dialog .close',
+                        '.modal__close',
+                        '.modal-close-btn',
+                        '.close-icon',
+                        '.icon-close',
+                        '.login-pop .close',
+                        '.dy-modal .close',
+                        '#login-modal .close',
+                        '.login-overlay .close'
+                    ];
+                    
+                    for (const selector of closeButtons) {
+                        const button = document.querySelector(selector);
+                        if (button) {
+                            console.log('找到登录窗口关闭按钮，点击...');
+                            button.click();
+                            return true;
+                        }
+                    }
+                    
+                    // 尝试点击背景关闭
+                    const modalBackdrops = [
+                        '.modal-backdrop',
+                        '.login-backdrop',
+                        '.popup-backdrop',
+                        '.modal-overlay',
+                        '.login-overlay',
+                        '.dy-modal__overlay'
+                    ];
+                    
+                    for (const selector of modalBackdrops) {
+                        const backdrop = document.querySelector(selector);
+                        if (backdrop) {
+                            console.log('点击背景关闭登录窗口...');
+                            backdrop.click();
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                };
+                
+                // 尝试关闭登录窗口（增加尝试次数）
+                for (let i = 0; i < 5; i++) {
+                    if (closeLoginModal()) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        break;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
+                
+                console.log('开始等待关键元素...');
+                
+                // 等待视频或图片元素出现（排除加载图标）
                 await new Promise(resolve => {
                     let attempts = 0;
-                    const maxAttempts = 20;
+                    const maxAttempts = 40; // 增加尝试次数
                     
                     const checkElements = () => {
                         attempts++;
-                        const hasVideos = document.querySelector('video') !== null;
-                        const hasImages = document.querySelector('img') !== null;
-                        const hasContent = document.querySelector('.video-container, .post-content, .content') !== null;
                         
-                        if (hasVideos || hasImages || hasContent || attempts >= maxAttempts) {
-                            console.log(`等待完成: 视频=${hasVideos}, 图片=${hasImages}, 内容=${hasContent}, 尝试=${attempts}`);
+                        // 检查是否有视频元素
+                        const videos = document.querySelectorAll('video');
+                        const validVideos = Array.from(videos).filter(video => {
+                            // 排除可能的加载图标视频
+                            const src = video.src || video.currentSrc;
+                            const poster = video.poster || '';
+                            const videoWidth = video.videoWidth || 0;
+                            const videoHeight = video.videoHeight || 0;
+                            return src && 
+                                   !src.includes('loading') && 
+                                   !poster.includes('loading') &&
+                                   (videoWidth > 0 || videoHeight > 0); // 确保视频有实际尺寸
+                        });
+                        
+                        // 检查是否有图片元素
+                        const images = document.querySelectorAll('img');
+                        const validImages = Array.from(images).filter(img => {
+                            // 排除可能的加载图标图片
+                            const src = img.src || '';
+                            const alt = img.alt || '';
+                            const width = img.naturalWidth || 0;
+                            const height = img.naturalHeight || 0;
+                            return src && 
+                                   !src.includes('loading') && 
+                                   !alt.includes('加载') && 
+                                   !alt.includes('loading') &&
+                                   (width > 100 || height > 100); // 排除小尺寸的加载图标
+                        });
+                        
+                        // 检查是否有内容元素
+                        const contentElements = document.querySelectorAll('.video-container, .post-content, .content, .video-player, .video-feed, .item-video, .aweme-list, .tiktok-verse, .video-item');
+                        
+                        const hasValidVideos = validVideos.length > 0;
+                        const hasValidImages = validImages.length > 0;
+                        const hasContent = contentElements.length > 0;
+                        
+                        console.log(`尝试 ${attempts}: 有效视频=${hasValidVideos}, 有效图片=${hasValidImages}, 内容元素=${hasContent}`);
+                        
+                        if (hasValidVideos || hasValidImages || hasContent || attempts >= maxAttempts) {
+                            console.log(`等待完成: 有效视频=${hasValidVideos}, 有效图片=${hasValidImages}, 内容=${hasContent}, 尝试=${attempts}`);
                             resolve();
                         } else {
-                            setTimeout(checkElements, 500);
+                            setTimeout(checkElements, 1000); // 增加检查间隔
                         }
                     };
                     
@@ -139,14 +250,24 @@ class AdvancedTikTokScraper:
                 
                 // 等待网络请求稳定
                 let lastNetworkActivity = Date.now();
+                let networkStable = false;
+                let stableCounter = 0;
+                
                 await new Promise(resolve => {
                     const checkNetwork = () => {
                         const now = Date.now();
-                        if (now - lastNetworkActivity > 2000) {
-                            console.log('网络请求稳定');
-                            resolve();
+                        if (now - lastNetworkActivity > 4000) { // 增加网络稳定等待时间
+                            stableCounter++;
+                            if (stableCounter >= 2) { // 需要连续两次检查都稳定
+                                console.log('网络稳定，准备提取数据');
+                                resolve();
+                            } else {
+                                setTimeout(checkNetwork, 1000);
+                            }
                         } else {
-                            setTimeout(checkNetwork, 500);
+                            stableCounter = 0;
+                            networkStable = false;
+                            setTimeout(checkNetwork, 800);
                         }
                     };
                     
@@ -154,26 +275,34 @@ class AdvancedTikTokScraper:
                     const originalFetch = window.fetch;
                     window.fetch = async (...args) => {
                         lastNetworkActivity = Date.now();
+                        networkStable = false;
                         return originalFetch.apply(this, args);
                     };
                     
                     const originalXHR = XMLHttpRequest;
                     XMLHttpRequest.prototype.send = function(...args) {
                         lastNetworkActivity = Date.now();
+                        networkStable = false;
                         return originalXHR.prototype.send.apply(this, args);
                     };
                     
                     setTimeout(checkNetwork, 1000);
                 });
                 
-                console.log('网络稳定，开始提取数据...');
+                console.log('网络稳定，开始模拟用户行为...');
                 
-                // 模拟用户行为：滚动页面
-                for (let i = 0; i < 3; i++) {
-                    window.scrollBy(0, 500);
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                // 模拟用户行为：滚动页面（增加滚动次数和间隔）
+                for (let i = 0; i < 5; i++) {
+                    window.scrollBy(0, 800);
+                    await new Promise(resolve => setTimeout(resolve, 1200));
                 }
                 window.scrollTo(0, 0);
+                
+                // 再次检查并关闭登录窗口
+                closeLoginModal();
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                console.log('开始提取数据...');
                 
                 const results = {
                     pageTitle: document.title,
@@ -183,9 +312,13 @@ class AdvancedTikTokScraper:
                     pageData: {}
                 };
                 
-                // 提取视频
-                const videos = Array.from(document.querySelectorAll('video'));
-                results.videos = videos.map(video => {
+                // 提取视频（排除加载图标）
+                const videos = document.querySelectorAll('video');
+                results.videos = Array.from(videos).filter(video => {
+                    const src = video.src || video.currentSrc;
+                    const poster = video.poster || '';
+                    return src && !src.includes('loading') && !poster.includes('loading');
+                }).map(video => {
                     return {
                         src: video.src,
                         currentSrc: video.currentSrc,
@@ -197,9 +330,13 @@ class AdvancedTikTokScraper:
                     };
                 });
                 
-                // 提取图片
-                const images = Array.from(document.querySelectorAll('img'));
-                results.images = images.map(img => {
+                // 提取图片（排除加载图标）
+                const images = document.querySelectorAll('img');
+                results.images = Array.from(images).filter(img => {
+                    const src = img.src || '';
+                    const alt = img.alt || '';
+                    return src && !src.includes('loading') && !alt.includes('加载') && !alt.includes('loading');
+                }).map(img => {
                     return {
                         src: img.src,
                         srcset: img.srcset,
@@ -250,32 +387,143 @@ class AdvancedTikTokScraper:
                 
                 // 等待页面加载完成
                 await new Promise(resolve => {
-                    if (document.readyState === 'complete') {
-                        resolve();
-                    } else {
-                        window.addEventListener('load', resolve);
-                        setTimeout(resolve, 20000); // 20秒超时
-                    }
+                    let loadAttempts = 0;
+                    const maxLoadAttempts = 60; // 30秒
+                    
+                    const checkLoadStatus = () => {
+                        loadAttempts++;
+                        if (document.readyState === 'complete') {
+                            console.log('页面完全加载完成');
+                            resolve();
+                        } else if (loadAttempts >= maxLoadAttempts) {
+                            console.log('页面加载超时，继续执行');
+                            resolve();
+                        } else {
+                            setTimeout(checkLoadStatus, 500);
+                        }
+                    };
+                    
+                    checkLoadStatus();
                 });
                 
-                console.log('页面加载完成，开始等待关键元素...');
+                console.log('页面加载完成，开始处理登录窗口...');
                 
-                // 等待视频或图片元素出现
+                // 关闭登录窗口
+                const closeLoginModal = () => {
+                    // 常见的关闭按钮选择器
+                    const closeButtons = [
+                        '.login-modal .close',
+                        '.modal-close',
+                        '.close-btn',
+                        '.x-button',
+                        '[aria-label="关闭"]',
+                        '[aria-label="Close"]',
+                        '.popup-close',
+                        '.dialog-close',
+                        '.login-dialog .close',
+                        '.modal__close',
+                        '.modal-close-btn',
+                        '.close-icon',
+                        '.icon-close',
+                        '.login-pop .close',
+                        '.dy-modal .close',
+                        '#login-modal .close',
+                        '.login-overlay .close'
+                    ];
+                    
+                    for (const selector of closeButtons) {
+                        const button = document.querySelector(selector);
+                        if (button) {
+                            console.log('找到登录窗口关闭按钮，点击...');
+                            button.click();
+                            return true;
+                        }
+                    }
+                    
+                    // 尝试点击背景关闭
+                    const modalBackdrops = [
+                        '.modal-backdrop',
+                        '.login-backdrop',
+                        '.popup-backdrop',
+                        '.modal-overlay',
+                        '.login-overlay',
+                        '.dy-modal__overlay'
+                    ];
+                    
+                    for (const selector of modalBackdrops) {
+                        const backdrop = document.querySelector(selector);
+                        if (backdrop) {
+                            console.log('点击背景关闭登录窗口...');
+                            backdrop.click();
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                };
+                
+                // 尝试关闭登录窗口（增加尝试次数）
+                for (let i = 0; i < 5; i++) {
+                    if (closeLoginModal()) {
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        break;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
+                
+                console.log('开始等待关键元素...');
+                
+                // 等待视频或图片元素出现（排除加载图标）
                 await new Promise(resolve => {
                     let attempts = 0;
-                    const maxAttempts = 30;
+                    const maxAttempts = 40; // 增加尝试次数
                     
                     const checkElements = () => {
                         attempts++;
-                        const hasVideos = document.querySelector('video') !== null;
-                        const hasImages = document.querySelector('img') !== null;
-                        const hasContent = document.querySelector('.video-container, .post-content, .content, .video-player') !== null;
                         
-                        if (hasVideos || hasImages || hasContent || attempts >= maxAttempts) {
-                            console.log(`等待完成: 视频=${hasVideos}, 图片=${hasImages}, 内容=${hasContent}, 尝试=${attempts}`);
+                        // 检查是否有视频元素
+                        const videos = document.querySelectorAll('video');
+                        const validVideos = Array.from(videos).filter(video => {
+                            // 排除可能的加载图标视频
+                            const src = video.src || video.currentSrc;
+                            const poster = video.poster || '';
+                            const videoWidth = video.videoWidth || 0;
+                            const videoHeight = video.videoHeight || 0;
+                            return src && 
+                                   !src.includes('loading') && 
+                                   !poster.includes('loading') &&
+                                   (videoWidth > 0 || videoHeight > 0); // 确保视频有实际尺寸
+                        });
+                        
+                        // 检查是否有图片元素
+                        const images = document.querySelectorAll('img');
+                        const validImages = Array.from(images).filter(img => {
+                            // 排除可能的加载图标图片
+                            const src = img.src || '';
+                            const alt = img.alt || '';
+                            const width = img.naturalWidth || 0;
+                            const height = img.naturalHeight || 0;
+                            return src && 
+                                   !src.includes('loading') && 
+                                   !alt.includes('加载') && 
+                                   !alt.includes('loading') &&
+                                   (width > 100 || height > 100); // 排除小尺寸的加载图标
+                        });
+                        
+                        // 检查是否有内容元素
+                        const contentElements = document.querySelectorAll('.video-container, .post-content, .content, .video-player, .video-feed, .item-video, .aweme-list, .tiktok-verse, .video-item');
+                        
+                        const hasValidVideos = validVideos.length > 0;
+                        const hasValidImages = validImages.length > 0;
+                        const hasContent = contentElements.length > 0;
+                        
+                        console.log(`尝试 ${attempts}: 有效视频=${hasValidVideos}, 有效图片=${hasValidImages}, 内容元素=${hasContent}`);
+                        
+                        if (hasValidVideos || hasValidImages || hasContent || attempts >= maxAttempts) {
+                            console.log(`等待完成: 有效视频=${hasValidVideos}, 有效图片=${hasValidImages}, 内容=${hasContent}, 尝试=${attempts}`);
                             resolve();
                         } else {
-                            setTimeout(checkElements, 500);
+                            setTimeout(checkElements, 1000); // 增加检查间隔
                         }
                     };
                     
@@ -286,14 +534,24 @@ class AdvancedTikTokScraper:
                 
                 // 等待网络请求稳定
                 let lastNetworkActivity = Date.now();
+                let networkStable = false;
+                let stableCounter = 0;
+                
                 await new Promise(resolve => {
                     const checkNetwork = () => {
                         const now = Date.now();
-                        if (now - lastNetworkActivity > 3000) {
-                            console.log('网络请求稳定');
-                            resolve();
+                        if (now - lastNetworkActivity > 4000) { // 增加网络稳定等待时间
+                            stableCounter++;
+                            if (stableCounter >= 2) { // 需要连续两次检查都稳定
+                                console.log('网络稳定，准备提取数据');
+                                resolve();
+                            } else {
+                                setTimeout(checkNetwork, 1000);
+                            }
                         } else {
-                            setTimeout(checkNetwork, 500);
+                            stableCounter = 0;
+                            networkStable = false;
+                            setTimeout(checkNetwork, 800);
                         }
                     };
                     
@@ -301,12 +559,14 @@ class AdvancedTikTokScraper:
                     const originalFetch = window.fetch;
                     window.fetch = async (...args) => {
                         lastNetworkActivity = Date.now();
+                        networkStable = false;
                         return originalFetch.apply(this, args);
                     };
                     
                     const originalXHR = XMLHttpRequest;
                     XMLHttpRequest.prototype.send = function(...args) {
                         lastNetworkActivity = Date.now();
+                        networkStable = false;
                         return originalXHR.prototype.send.apply(this, args);
                     };
                     
@@ -315,20 +575,37 @@ class AdvancedTikTokScraper:
                 
                 console.log('网络稳定，开始滚动页面...');
                 
-                // 模拟用户滚动
-                const scrollInterval = setInterval(() => {
-                    window.scrollBy(0, 600);
-                }, 600);
-                
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                clearInterval(scrollInterval);
+                // 模拟用户滚动（增加滚动次数和间隔）
+                for (let i = 0; i < 5; i++) {
+                    window.scrollBy(0, 800);
+                    await new Promise(resolve => setTimeout(resolve, 1200));
+                }
                 window.scrollTo(0, 0);
+                
+                // 再次检查并关闭登录窗口
+                closeLoginModal();
+                await new Promise(resolve => setTimeout(resolve, 800));
                 
                 console.log('滚动完成，提取数据...');
                 
+                // 提取视频和图片（排除加载图标）
+                const videos = document.querySelectorAll('video');
+                const validVideos = Array.from(videos).filter(video => {
+                    const src = video.src || video.currentSrc;
+                    const poster = video.poster || '';
+                    return src && !src.includes('loading') && !poster.includes('loading');
+                }).map(v => v.src || v.currentSrc);
+                
+                const images = document.querySelectorAll('img');
+                const validImages = Array.from(images).filter(img => {
+                    const src = img.src || '';
+                    const alt = img.alt || '';
+                    return src && !src.includes('loading') && !alt.includes('加载') && !alt.includes('loading');
+                }).map(i => i.src);
+                
                 return {
-                    videos: Array.from(document.querySelectorAll('video')).map(v => v.src || v.currentSrc),
-                    images: Array.from(document.querySelectorAll('img')).map(i => i.src),
+                    videos: validVideos,
+                    images: validImages,
                     pageTitle: document.title
                 };
             })();
@@ -349,6 +626,9 @@ class AdvancedTikTokScraper:
                     for req in result.network_requests:
                         req_url = req.get('url', '')
                         url_lower = req_url.lower()
+                        # 排除可能的加载图标请求
+                        if 'loading' in url_lower:
+                            continue
                         if any(ext in url_lower for ext in ['.mp4', '.webm', '.m3u8', '.ts', '.mp3', '.flv']):
                             media_requests.append({
                                 'type': 'video',
@@ -382,31 +662,35 @@ def extract_media_urls(result: dict, mode: str) -> tuple:
     if mode == "2" and "media_requests" in result:
         for item in result["media_requests"]:
             if item["type"] == "video" and item.get("url"):
-                video_urls.append(item["url"])
+                # 排除可能的加载图标
+                if 'loading' not in item["url"].lower():
+                    video_urls.append(item["url"])
             elif item["type"] == "image" and item.get("url"):
-                image_urls.append(item["url"])
+                # 排除可能的加载图标
+                if 'loading' not in item["url"].lower():
+                    image_urls.append(item["url"])
     else:
         media = result.get("media")
         if media:
             for video in media.get("videos", []):
                 if isinstance(video, dict):
                     src = video.get("src") or video.get("currentSrc")
-                    if src:
+                    if src and 'loading' not in src.lower():
                         video_urls.append(src)
                     for s in video.get("sources", []):
-                        if s and s not in video_urls:
+                        if s and s not in video_urls and 'loading' not in s.lower():
                             video_urls.append(s)
                 else:
-                    if video:
+                    if video and 'loading' not in video.lower():
                         video_urls.append(video)
             
             for image in media.get("images", []):
                 if isinstance(image, dict):
                     src = image.get("src")
-                    if src:
+                    if src and 'loading' not in src.lower():
                         image_urls.append(src)
                 else:
-                    if image:
+                    if image and 'loading' not in image.lower():
                         image_urls.append(image)
     
     video_urls = list(dict.fromkeys(video_urls))

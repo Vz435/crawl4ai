@@ -356,19 +356,23 @@ async def main():
             download_choice = input("\n请选择 (1-5, 默认 4): ").strip() or "4"
             
             if download_choice in ["1", "2", "3"]:
-                downloader = MediaDownloader(output_dir="./downloads")
+                desktop_path = Path.home() / "Desktop"
+                download_dir = desktop_path / "啊哈哈哈哈"
+                downloader = MediaDownloader(output_dir=str(download_dir))
                 
                 if download_choice in ["1", "3"] and video_urls:
                     print(f"\n📥 开始下载 {len(video_urls)} 个视频...")
                     await downloader.download_batch(video_urls, "video")
-                    print(f"\n✅ 视频下载完成！保存位置: ./downloads/videos/")
+                    print(f"\n✅ 视频下载完成！")
                 
                 if download_choice in ["2", "3"] and image_urls:
                     print(f"\n📥 开始下载 {len(image_urls)} 张图片...")
                     await downloader.download_batch(image_urls, "image")
-                    print(f"\n✅ 图片下载完成！保存位置: ./downloads/images/")
+                    print(f"\n✅ 图片下载完成！")
                 
-                print(f"\n📁 所有文件已保存到: {downloader.output_dir.absolute()}")
+                print(f"\n📁 所有文件已保存到: 桌面/啊哈哈哈哈/")
+                print(f"   - 视频位置: 桌面/啊哈哈哈哈/videos/")
+                print(f"   - 图片位置: 桌面/啊哈哈哈哈/images/")
             
             if download_choice == "4" or download_choice in ["1", "2", "3"]:
                 save_links = input("\n是否同时保存链接到 JSON 文件? (y/n, 默认 y): ").strip().lower() or "y"
